@@ -1,0 +1,280 @@
+//@version=5
+//By:Ali Rajabpour-Sanati | ali.poursanati@gmail.com
+indicator(title="📊ARPS Info table📊", shorttitle="📊ARPS Info📊", overlay=true)
+
+
+// *****************************************************************************************
+//------------------------------- Simple Moving Averages ---------------------------------//
+
+MA1 = request.security(syminfo.tickerid, '30', ta.sma(close, 200))
+MA2 = request.security(syminfo.tickerid, '60', ta.sma(close, 200))
+MA3 = request.security(syminfo.tickerid, '240', ta.sma(close, 200))
+MA4 = request.security(syminfo.tickerid, '360', ta.sma(close, 200))
+MA5 = request.security(syminfo.tickerid, '720', ta.sma(close, 200))
+MA6 = request.security(syminfo.tickerid, 'D', ta.sma(close, 200))
+MA7 = request.security(syminfo.tickerid, 'W', ta.sma(close, 200))
+
+// *****************************************************************************************
+//--------------------------------------- Stoploss ---------------------------------------//
+
+stoploss_price_long = low - ta.atr(30)
+stoploss_price_short = high + ta.atr(30)
+
+// *****************************************************************************************
+//--------------------------------------- 200EMAs ----------------------------------------//
+
+EMA1 = request.security(syminfo.tickerid, '30', ta.ema(close, 200))
+EMA2 = request.security(syminfo.tickerid, '60', ta.ema(close, 200))
+EMA3 = request.security(syminfo.tickerid, '240', ta.ema(close, 200))
+EMA4 = request.security(syminfo.tickerid, '360', ta.ema(close, 200))
+EMA5 = request.security(syminfo.tickerid, '720', ta.ema(close, 200))
+EMA6 = request.security(syminfo.tickerid, 'D', ta.ema(close, 200))
+EMA7 = request.security(syminfo.tickerid, 'W', ta.ema(close, 200))
+
+// *****************************************************************************************
+//-------------------------------- Alligator & Fractals ----------------------------------//
+
+
+// === INPUTS ===
+//
+jawLength = 13  //defval=13, "Jaw Length"
+teethLength = 8  //defval=8, "Teeth Length"
+lipsLength = 5  //defval=5, "Lips Length"
+jawOffset = 8  //defval=8, "Jaw Offset"
+teethOffset = 5  //defval=5, "Teeth Offset"
+lipsOffset = 3  //defval=3, "Lips Offset"
+asrc = hl2  //defval=hl2, "Alligator Source"
+
+hideAlligator = true  //defval=false
+showAlligatorState = true  //defval=false
+//
+hidefractals = true  //defval=false
+hidelevels = true  //defval=false
+maxLvlLen = 0  //defval=0
+uFractalRev = input(true, title='Show Williams Fractal Reversal Strategy')  //defval=false, "Use Fractal Reversal Strategy"
+uFractalBO = false  //defval=false, "Use Fractal Break Out Strategy"
+uAwesomeBO = false  //defval=false, "Use Awesome Break Out Strategy"
+nLengthSlow = 34  //defval=34, minval=1, title="Awesome Slow Length"
+nLengthFast = 5  //defval=5, minval=1, title="Awesome Fast Length"
+
+// === FUNCTIONS ===
+
+//  ||---   Completed Fractals Recognition Functions:  -----------------------------------------------------||
+isIdealFractal(mode) =>
+    ret = mode == 1 ? high[4] < high[3] and high[3] < high[2] and high[2] > high[1] and high[1] > high[0] : mode == -1 ? low[4] > low[3] and low[3] > low[2] and low[2] < low[1] and low[1] < low[0] : false
+    ret
+
+isRegularFractal(mode) =>
+    ret = mode == 1 ? high[4] < high[2] and high[3] <= high[2] and high[2] > high[1] and high[2] > high[0] : mode == -1 ? low[4] > low[2] and low[3] >= low[2] and low[2] < low[1] and low[2] < low[0] : false
+    ret
+
+//  ||-----------------------------------------------------------------------------------------------------||
+
+//
+// SMMA function to Calculate Alligaor Trend Lines
+//
+smma(src, length) =>
+    s = 0.0
+    sma_1 = request.security(syminfo.tickerid, '60', ta.sma(src, length))
+    s := na(s[1]) ? sma_1 : (s[1] * (length - 1) + src) / length
+    s
+
+// === /FUNCIONS ===
+
+// === SERIES ===
+
+// Calculate Offsetted Alligator curves
+jaw_ = smma(asrc, jawLength)
+teeth_ = smma(asrc, teethLength)
+lips_ = smma(asrc, lipsLength)
+
+// Re-allign Alligator to current price action.
+jaw = jaw_[jawOffset]
+teeth = teeth_[teethOffset]
+lips = lips_[lipsOffset]
+
+// Fractals.
+topfractal = isRegularFractal(1)
+botfractal = isRegularFractal(-1)
+
+//Count How many candles for current Pivot Level, If new reset.
+topcnt = 0
+botcnt = 0
+topcnt := topfractal ? 0 : nz(topcnt[1]) + 1
+botcnt := botfractal ? 0 : nz(botcnt[1]) + 1
+
+topfractals = 0.0
+botfractals = 0.0
+topfractals := topfractal ? high[2] : topfractals[1]
+botfractals := botfractal ? low[2] : botfractals[1]
+
+topfc = topfractals != topfractals[1] ? na : color.green
+botfc = botfractals != botfractals[1] ? na : color.red
+
+// Alligator trend States down(<0), up(>0), considation(0) conditions.
+// 1 = lips above teeth above jaw in order, 2 = lips above teeth and jaw, 3 = lips above teeth.
+//
+AlligatorState = lips < teeth and teeth < jaw ? -1 : lips > teeth and teeth > jaw ? 1 : lips < teeth and lips < jaw ? -2 : lips > teeth and lips > jaw ? 2 : lips < teeth ? -3 : lips > teeth ? 3 : 0
+
+//
+// Fractal Reversal Signal
+//
+highRev = 0
+lowRev = 0
+highRev := AlligatorState <= 0 ? 0 : AlligatorState == 1 ? AlligatorState[2] > 0 and botfractal and low[2] > teeth[2] ? nz(highRev[1]) + 1 : highRev[1] > 0 ? highRev[1] + 1 : 0 : 0
+lowRev := AlligatorState >= 0 ? 0 : AlligatorState == -1 ? AlligatorState[2] < 0 and topfractal and high[2] < teeth[2] ? nz(lowRev[1]) + 1 : lowRev[1] > 0 ? lowRev[1] + 1 : 0 : 0
+
+// Show Fractal Reversal alert Arrows
+plotarrow(uFractalRev ? highRev == 1 ? 1 : lowRev == 1 ? -1 : na : na, title='Fractal Reversal Arrow', colorup=color.new(color.lime, 20), colordown=color.new(color.red, 20), offset=0, minheight=40, maxheight=60, editable=false)
+
+// show Alligator Trend Direction State.
+//plotshape(ShowAlligator ? true : na, title="Alligator Trend Direction", location=location.bottom, style=shape.square, color=AlligatorState == 1 ? color.green : AlligatorState == -1 ? color.red : color.yellow, transp=10)
+
+// ***********************************************************************************
+//------------------------- Squeeze Momentum Indicator -----------------------------//
+
+SQZMOMlength = 20  //BB Length
+mult = 2.0  //BB MultFactor
+lengthKC = 20  //KC Length
+multKC = 1.5  //KC MultFactor
+useTrueRange = true  //Use TrueRange (KC)
+
+// Calculate BB
+source = close
+basis = ta.sma(source, SQZMOMlength)
+dev = mult * ta.stdev(source, SQZMOMlength)
+upperBB = basis + dev
+lowerBB = basis - dev
+
+// Calculate KC
+ma = ta.sma(source, lengthKC)
+sqz_range = useTrueRange ? ta.tr : high - low
+rangema = ta.sma(sqz_range, lengthKC)
+upperKC = ma + rangema * multKC
+lowerKC = ma - rangema * multKC
+
+sqzOn = lowerBB > lowerKC and upperBB < upperKC
+sqzOff = lowerBB < lowerKC and upperBB > upperKC
+noSqz = sqzOn == false and sqzOff == false
+
+val = ta.linreg(source - math.avg(math.avg(ta.highest(high, lengthKC), ta.lowest(low, lengthKC)), ta.sma(close, lengthKC)), lengthKC, 0)
+
+// 10 = maroon/Go Long  |  12 = Green/Go Short  |  22 = red/ExitShort  |  11 = lime/Exit Long
+iff_11 = val > nz(val[1]) ? 11 : 12
+iff_22 = val < nz(val[1]) ? 22 : 10
+sqz_position = val > 0 ? iff_11 : iff_22
+
+sqzGoLong = sqzOff and sqz_position == 11 and val < 51
+sqzGoShort = sqzOff and sqz_position == 22 and val > -51
+//sqzExitLong = sqzOff and (sqz_position == 11)
+//sqzExitShort = sqzOff and (sqz_position == 22)
+
+// *****************************************************************************************
+//--------------------------------- Information Table ------------------------------------//
+
+var tbl = table.new(position.top_right, 4, 18)
+if barstate.islast
+    table.cell(tbl, 0, 0, '', bgcolor=#aaaaaa00, width=5, height=4)
+    table.cell(tbl, 1, 0, 'Long', bgcolor=#aaaaaa, width=5, height=4)
+    table.cell(tbl, 2, 0, 'ND', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 0, 'Short', bgcolor=#aaaaaa, width=5, height=4)
+
+    table.cell(tbl, 0, 1, '🛑Stoploss🛑', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 2, '🐊Alligator🐊', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 3, '200EMA (30m)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 4, '200EMA (1h)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 5, '200EMA (4h)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 6, '200EMA (6h)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 7, '200EMA (12h)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 8, '200EMA (D)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 9, '200EMA (W)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 10, '200MA (30m)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 11, '200MA (1h)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 12, '200MA (4h)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 13, '200MA (6h)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 14, '200MA (12h)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 15, '200MA (D)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 16, '200MA (W)', bgcolor=#aaaaaa, width=10, height=4)
+    table.cell(tbl, 0, 17, 'Squeeze Mom', bgcolor=#aaaaaa, width=10, height=4)
+    
+//Stoploss
+    table.cell(tbl, 1, 1, str.tostring(stoploss_price_long, '#.#####'), bgcolor=color.green, width=7, height=4)
+    table.cell(tbl, 2, 1, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 1, str.tostring(stoploss_price_short, '#.#####'), bgcolor=color.red, width=7, height=4)
+
+//Alligator
+    table.cell(tbl, 1, 2, (AlligatorState == 1) ? '🐮' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 2, ((AlligatorState != -1) and (AlligatorState != 1)) ? '💤' : '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 2, (AlligatorState == -1) ? '🐻' : '---', bgcolor=color.red, width=5, height=4)
+
+//EMA30 (EMA1)
+    table.cell(tbl, 1, 3, ((close > (EMA1 + (EMA1 * 0.002))) and (open > (EMA1 + (EMA1 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 3, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 3, ((close < (EMA1 - (EMA1 * 0.002))) and (open < (EMA1 - (EMA1 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//EMA60 (EMA2)
+    table.cell(tbl, 1, 4, ((close > (EMA2 + (EMA2 * 0.002))) and (open > (EMA2 + (EMA2 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 4, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 4, ((close < (EMA2 - (EMA2 * 0.002))) and (open < (EMA2 - (EMA2 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//EMA240 (EMA3)
+    table.cell(tbl, 1, 5, ((close > (EMA3 + (EMA3 * 0.002))) and (open > (EMA3 + (EMA3 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 5, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 5, ((close < (EMA3 - (EMA3 * 0.002))) and (open < (EMA3 - (EMA3 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//EMA360 (EMA4)
+    table.cell(tbl, 1, 6, ((close > (EMA4 + (EMA4 * 0.002))) and (open > (EMA4 + (EMA4 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 6, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 6, ((close < (EMA4 - (EMA4 * 0.002))) and (open < (EMA4 - (EMA4 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//EMA720 (EMA5)
+    table.cell(tbl, 1, 7, ((close > (EMA5 + (EMA5 * 0.002))) and (open > (EMA5 + (EMA5 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 7, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 7, ((close < (EMA5 - (EMA5 * 0.002))) and (open < (EMA5 - (EMA5 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//EMA-D (EMA6)
+    table.cell(tbl, 1, 8, ((close > (EMA6 + (EMA6 * 0.002))) and (open > (EMA6 + (EMA6 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 8, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 8, ((close < (EMA6 - (EMA6 * 0.002))) and (open < (EMA6 - (EMA6 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//EMA-M (EMA7)
+    table.cell(tbl, 1, 9, ((close > (EMA7 + (EMA7 * 0.002))) and (open > (EMA7 + (EMA7 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 9, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 9, ((close < (EMA7 - (EMA7 * 0.002))) and (open < (EMA7 - (EMA7 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+
+
+//MA30 (MA1)
+    table.cell(tbl, 1, 10, ((close > (MA1 + (MA1 * 0.002))) and (open > (MA1 + (MA1 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 10, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 10, ((close < (MA1 - (MA1 * 0.002))) and (open < (MA1 - (MA1 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//MA60 (MA2)
+    table.cell(tbl, 1, 11, ((close > (MA2 + (MA2 * 0.002))) and (open > (MA2 + (MA2 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 11, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 11, ((close < (MA2 - (MA2 * 0.002))) and (open < (MA2 - (MA2 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//MA240 (MA3)
+    table.cell(tbl, 1, 12, ((close > (MA3 + (MA3 * 0.002))) and (open > (MA3 + (MA3 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 12, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 12, ((close < (MA3 - (MA3 * 0.002))) and (open < (MA3 - (MA3 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//MA360 (MA4)
+    table.cell(tbl, 1, 13, ((close > (MA4 + (MA4 * 0.002))) and (open > (MA4 + (MA4 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 13, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 13, ((close < (MA4 - (MA4 * 0.002))) and (open < (MA4 - (MA4 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//MA720 (MA5)
+    table.cell(tbl, 1, 14, ((close > (MA5 + (MA5 * 0.002))) and (open > (MA5 + (MA5 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 14, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 14, ((close < (MA5 - (MA5 * 0.002))) and (open < (MA5 - (MA5 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//MA-D (MA6)
+    table.cell(tbl, 1, 15, ((close > (MA6 + (MA6 * 0.002))) and (open > (MA6 + (MA6 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 15, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 15, ((close < (MA6 - (MA6 * 0.002))) and (open < (MA6 - (MA6 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+//MA-M (MA7)
+    table.cell(tbl, 1, 16, ((close > (MA7 + (MA7 * 0.002))) and (open > (MA7 + (MA7 * 0.002)))) ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 16, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 16, ((close < (MA7 - (MA7 * 0.002))) and (open < (MA7 - (MA7 * 0.002)))) ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+
+
+//Squeeze Mom
+    table.cell(tbl, 1, 17, sqzGoLong ? '⬆️' : '---', bgcolor=color.green, width=5, height=4)
+    table.cell(tbl, 2, 17, '---', bgcolor=#aaaaaa, width=3, height=4)
+    table.cell(tbl, 3, 17, sqzGoShort ? '⬇️' : '---', bgcolor=color.red, width=5, height=4)
+
+
+
+var tbl2 = table.new(position.bottom_center, 1, 2)
+if barstate.islast
+    table.cell(tbl2, 0, 0, 'Ali Rajabpour-Sanati', bgcolor=#aaaaaa00, text_color = color.rgb(255, 255, 255, 20), width=20, height=5)
+    table.cell(tbl2, 0, 1, 'ali.poursanati@gmail.com', bgcolor=#aaaaaa00, text_size = size.tiny, text_color = color.rgb(255, 255, 255, 5), width=20, height=4)
