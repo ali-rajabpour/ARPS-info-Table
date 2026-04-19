@@ -1,6 +1,5 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/4194daa0-ecc7-42b3-a62d-7b96837b4cb9
-" 
+  <img src="https://github.com/user-attachments/assets/4194daa0-ecc7-42b3-a62d-7b96837b4cb9" 
        alt="FileFlow"
        width="60%" />
 </p>
